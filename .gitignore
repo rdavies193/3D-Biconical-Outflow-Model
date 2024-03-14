@@ -1,5 +1,4 @@
 __pycache__/biconical_outflow_model_3d.cpython-311.pyc
-emission_model.png
-maps_2d.png
-model_3d.png
-Bae & Woo 2016 Biconical Outflow Model 3D.ipynb
+*.png
+*.pickle
+*.ipynb

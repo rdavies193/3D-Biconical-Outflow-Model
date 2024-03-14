@@ -1,32 +1,22 @@
 # AGN Biconical Outflow Model adopted from Bae & Woo 2016
 # See: https://ui.adsabs.harvard.edu/abs/2016ApJ...828...97B/abstract
-# 
+# adapted from the github repo: https://github.com/remingtonsexton/3D-Biconical-Outflow-Model
+# main changes are making it work in Python 3
 
 import numpy as np
-import pandas as pd
-import scipy as sp
 # import emcee
 import matplotlib.pyplot as plt 
 import matplotlib.gridspec as gridspec
-from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
 import matplotlib.colors as colors
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from scipy.spatial import Delaunay
 from matplotlib.patches import FancyArrowPatch
-from matplotlib import animation
 from scipy.interpolate import griddata, interp1d
 from scipy.ndimage import gaussian_filter
 from scipy.integrate import simps
 from astropy.convolution import convolve
-from astropy.convolution.kernels import Gaussian2DKernel
 import matplotlib.cm as cm
-import os 
-import shutil
-import sys
 import matplotlib
-import time
-import emcee
 matplotlib.rcParams['agg.path.chunksize'] = 100000
 # np.set_printoptions(threshold=sys.maxsize)
 
@@ -167,7 +157,7 @@ def generate_bicone(theta_in_deg, theta_out_deg,
 
     # Generate dust plane grid
     # print('\n Generating dust plane...')
-    rd = 2.0*D # dust plane radius (defualt 2 x D)
+    rd = 1.5*D # dust plane radius (defualt 2 x D)
     Xg, Yg = np.meshgrid(np.linspace(-rd,rd,sampling),np.linspace(-rd,rd,sampling) )
     xdgrid,ydgrid = Xg.ravel(),Yg.ravel()
     zdgrid = np.full(np.shape(xdgrid),0.0) # zero thickness for simplicity
@@ -182,7 +172,8 @@ def generate_bicone(theta_in_deg, theta_out_deg,
 
     bicone_coords = (xbgrid, ybgrid, zbgrid)
     dust_coords = (xd_rot,yd_rot,zd_rot)
-    # Generate flux grid
+    # Generate flux grid. Contains a flux value at every location of the bicone grid (1D array). 
+    # It is a regular grid that can be resampled, and then you just integrate along the LOS to get the total flux.
     fgrid = flux_profile(new_bicone_grid,bicone_coords,dust_coords,tau=tau,D=D,fn=fn,A=A)
     vgrid = velocity_profile(new_bicone_grid,bicone_coords,D=D,vmax=vmax,vtype=vtype)
     
@@ -195,7 +186,7 @@ def generate_bicone(theta_in_deg, theta_out_deg,
 
 
 
-    return xbgrid,ybgrid,zbgrid,fgrid,vgrid
+    return bicone_coords,dust_coords,fgrid,vgrid
 
 #####################################################################################
 
@@ -252,10 +243,22 @@ def flux_profile(bicone_grid,bicone_coords,dust_coords,tau=5.0,D=1.0,fn=1.0,A=0.
     # print('\n      %0.2f seconds' % float(time.time()-t0))
 
     # t0 = time.time()
+    # attenuate flux in pixels where the bicone is at a lower y-value than the dust plane.
     ind =  np.where((yb<=yc))[0]
     fd_ext[ind]*=(1.0-A)
     # print('\n      %0.2f seconds' % float(time.time()-t0))
     flux = fd_ext
+    # dust coordinates are a subset of bicone coordinates??
+    # flux_added = np.zeros(xb.size)
+    # for (x, y, z) in zip(xd, yd, zd):
+    #     # bounds check
+    #     # if x < xb[0] or x > xb[-1] or y < yb[0] or y > yb[-1] or z < zb[0] or z > zb[-1]:
+    #     #     continue
+            
+    #     closest_ind = np.nanargmin((x - xb)**2 + (y-yb)**2 + (z-zb)**2)
+    #     if flux_added[closest_ind] == 0:
+    #         flux[closest_ind] += 100
+    #         flux_added[closest_ind] = 1
 
     return np.array(flux)
 
@@ -340,7 +343,10 @@ class Arrow3D(FancyArrowPatch):
 
 #####################################################################################
 
-def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',plot=True,save_fig=True):
+def map_2d(bicone_coords, dust_coords, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',plot=True,save_fig=True):
+    xb,yb,zb = bicone_coords
+    xd,yd,zd = dust_coords
+
     if int(sampling)%2==0:
         # Having an odd sampling ensures that there is a value at (0,0,0)
         sampling = int(sampling)+1 
@@ -352,7 +358,7 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
     fmap[fmap<=0]=1
     fmap = np.log10(fmap)
     fmap[fmap<=0] = np.nan
-    fmap = fmap + np.abs(np.nanmin(fmap))
+    # fmap = fmap + np.abs(np.nanmin(fmap))
     
     #### Velocity map ###
 
@@ -383,17 +389,17 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
 
         # Axes 1: Flux Map
 
-        # Truncate colormap
-        def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
-            new_cmap = colors.LinearSegmentedColormap.from_list(
-                'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
-                cmap(np.linspace(minval, maxval, n)))
-            return new_cmap
-        cmap = plt.get_cmap('nipy_spectral')
-        new_cmap = truncate_colormap(cmap, 0.0, 0.9)
+        # # Truncate colormap
+        # def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+        #     new_cmap = colors.LinearSegmentedColormap.from_list(
+        #         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        #         cmap(np.linspace(minval, maxval, n)))
+        #     return new_cmap
+        # cmap = plt.get_cmap('nipy_spectral')
+        # new_cmap = truncate_colormap(cmap, 0.0, 0.9)
 
 
-        flux_axes = ax1.imshow(fmap.T,cmap=new_cmap,interpolation=interpolation,origin='lower',
+        flux_axes = ax1.imshow(fmap.T,cmap='viridis',interpolation=interpolation,origin='lower',
                    vmin=(np.nanmin(fmap)),vmax=(np.nanmax(fmap)),
                    extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)])
 
@@ -402,9 +408,16 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
         n[fmap/fmap!=1]=0
         nlevels = len(np.unique(np.round(n))) * 2
 
-        ax1.contour(fmap.T,extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],colors='black',linewidths=0.5,alpha=0.75,
-                    levels=np.linspace((np.nanmin(fmap)),(np.nanmax(fmap)+1),nlevels))
-        
+        # points = (xd,yd)
+        # values = zd
+        # # Put on uniform grid
+        # xdgrid,ydgrid = np.meshgrid(np.linspace(np.min(xd),np.max(xd),1000),np.linspace(np.min(yd),np.max(yd),1000))
+        # zdgrid = griddata(points, values, (xdgrid, ydgrid), method='cubic')
+
+        # ax1.contour(fmap.T,extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],colors='black',linewidths=0.5,alpha=0.75,
+        #             levels=np.linspace((np.nanmin(fmap)),(np.nanmax(fmap)+1),nlevels))
+        # ax1.contourf(xdgrid, ydgrid, zdgrid, cmap=cm.Oranges,alpha=0.5)
+
         ax1.set_xlim(-1.1,1.1)
         ax1.set_ylim(-1.1,1.5)
         cbax1 = inset_axes(ax1, width="90%", height="5%", loc=9)
@@ -417,7 +430,7 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
 
         # Axes 2: Velocity Map
         vel_axes = ax2.imshow(vmap.T,
-                   extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],cmap=cm.RdBu_r,
+                   extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],cmap='coolwarm',
                    vmin=-(np.nanmax(np.abs(vmap))),vmax=(np.nanmax(np.abs(vmap))),interpolation=interpolation,origin='lower')
         ax2.contour(fmap.T,extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],colors='black',linewidths=0.5,alpha=0.75,
                     levels=np.linspace(np.nanmin(fmap),np.nanmax(fmap)+1,nlevels))
@@ -436,7 +449,7 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
 
         # Axes 3: Velocity Dispersion Map
         disp_axes = ax3.imshow(dmap.T,
-                   extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],cmap=cm.Blues,
+                   extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],cmap='plasma',
                    vmin=(np.nanmin(dmap)),vmax=(np.nanmax(dmap)),interpolation=interpolation,origin='lower')
         ax3.contour(fmap.T,extent=[np.min(xb),np.max(xb),np.min(zb),np.max(zb)],colors='black',linewidths=0.5,alpha=0.75,
                     levels=np.linspace(np.nanmin(fmap),np.nanmax(fmap)+1,nlevels))
@@ -552,7 +565,7 @@ def plot_model(bicone_coords,dust_coords,flux_profile,vel_profile,bicone_vec,dus
     ax3.plot(0, 0,color='xkcd:red',alpha=alpha,marker='o',zorder=12)
     ax3.set_xlim(-2.5,2.5)
     ax3.set_ylim(-2.5,2.5)
-    ax3.set_xlabel(r'$y$')
+    ax3.set_xlabel(r'$x$')
     ax3.set_ylabel(r'$z$')
     ax3.invert_xaxis()
     ax3.grid(color='black',alpha=0.5)
@@ -920,7 +933,7 @@ def bicone_model(wave, A, tau, theta_in_deg, theta_out_deg,
     obs_res = 68.9 # resolution of SDSS for emission line model
     nbins= 40
     # Bicone coordinate, flux, and velocity grids
-    xbgrid,ybgrid,zbgrid,fgrid,vgrid = generate_bicone(theta_in_deg, theta_out_deg,
+    bicone_coords,dust_coords,fgrid,vgrid = generate_bicone(theta_in_deg, theta_out_deg,
                                                        theta_B1_deg, theta_B2_deg, theta_B3_deg,
                                                        theta_D1_deg, theta_D2_deg, theta_D3_deg,
                                                        D=D, tau=tau, fn=fn, A=A,
