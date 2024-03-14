@@ -32,6 +32,7 @@ matplotlib.rcParams['agg.path.chunksize'] = 100000
 
 # plt.style.use('dark_background')
 
+
 #####################################################################################
 
 def bicone_inclination(B1_deg,B2_deg):
@@ -145,7 +146,6 @@ def generate_bicone(theta_in_deg, theta_out_deg,
     R = coord_rotation((theta_B1_deg,theta_B2_deg,theta_B3_deg))
     u = np.vstack((xbgrid,ybgrid,zbgrid))
     u_rot = np.dot(R,u)
-    xb_rot,yb_rot,zb_rot = u_rot[0],u_rot[1],u_rot[2]
     # print('\n      %0.2f seconds' % float(time.time()-t0))
     # Interpolate onto a new Cartesian grid of the same dimension
     # t0 = time.time()
@@ -155,10 +155,10 @@ def generate_bicone(theta_in_deg, theta_out_deg,
 
     # scipy.interpolate.griddata uses Delauney triangulation for irregular grids which 
     # makes this method very slow.
-    points = zip(xb_rot,yb_rot,zb_rot) # 
+    points = np.transpose(u_rot)
     values = bicone_grid # 
 
-    new_bicone_grid = griddata(np.array(points),np.array(values),np.array(zip(xbgrid,ybgrid,zbgrid)),method='nearest')#,fill_value=0) # works version 1.1.0
+    new_bicone_grid = griddata(np.array(points), np.array(values), (xbgrid,ybgrid,zbgrid),method='nearest')
     # new_bicone_grid = griddata(np.array((xb_rot,yb_rot,zb_rot)).T,np.array(values),np.array((xbgrid,ybgrid,zbgrid)).T,method='nearest')#,fill_value=0) # 
 
     # print('\n      %0.2f seconds' % float(time.time()-t0))
@@ -328,11 +328,12 @@ class Arrow3D(FancyArrowPatch):
         FancyArrowPatch.__init__(self, (0,0), (0,0), *args, **kwargs)
         self._verts3d = xs, ys, zs
  
-    def draw(self, renderer):
+    # replaced draw method with this to be compatible with new matplotlib
+    def do_3d_projection(self):
         xs3d, ys3d, zs3d = self._verts3d
-        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
+        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, self.axes.M)
         self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
-        FancyArrowPatch.draw(self, renderer)
+        return np.min(zs)
  
     def set_data(self, xs, ys, zs):
         self._verts3d = xs, ys, zs
@@ -452,7 +453,7 @@ def map_2d(xb, yb, zb, fgrid, vgrid, D=1.0, sampling=100, interpolation='none',p
         plt.tight_layout()
         if save_fig==True:
             # plt.savefig('maps_2d.pdf',dpi=150,fmt='pdf')
-            plt.savefig('maps_2d.png',dpi=300,fmt='png')
+            plt.savefig('maps_2d.png',dpi=300,format='png')
 
         # plt.close()
 
@@ -645,7 +646,7 @@ def plot_model(bicone_coords,dust_coords,flux_profile,vel_profile,bicone_vec,dus
 
     if save_fig==True:
         # plt.savefig('model_3d.pdf',dpi=150,fmt='pdf')
-        plt.savefig('model_3d.png',dpi=300,fmt='png')
+        plt.savefig('model_3d.png',dpi=300,format='png')
     # plt.close()
     return None
 
@@ -770,7 +771,7 @@ def plot_model_3D(bicone_coords,dust_coords,flux_profile,vel_profile,bicone_vec,
 
     if save_fig==True:
         # plt.savefig('model_3d.pdf',dpi=150,fmt='pdf')
-        plt.savefig('model_3d.png',dpi=300,fmt='png')
+        plt.savefig('model_3d.png',dpi=300,format='png')
     # plt.close()
     return None
 
@@ -855,7 +856,7 @@ def emission_model(fgrid,vgrid,vmax,obs_res=68.9,nbins=25,sampling=100,plot=True
         plt.tight_layout()
         if save_fig==True:
             # plt.savefig('emission_model.pdf',dpi=150,fmt='pdf')
-            plt.savefig('emission_model.png',dpi=300,fmt='png')
+            plt.savefig('emission_model.png',dpi=300,format='png')
         # plt.close()
     return x_ang, emline
 
